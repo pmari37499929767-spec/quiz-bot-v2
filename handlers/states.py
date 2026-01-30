@@ -10,6 +10,9 @@ class QuizStates(StatesGroup):
     # Экран 2 — выбор причины
     screen2_cause = State()
 
+    # Экран 3 — результат (диагноз + фиксы)
+    screen3_result = State()
+
     waiting_for_name = State()
     waiting_for_niche = State()  # ← ДОБАВИЛИ для выбора ниши
     

@@ -186,6 +186,82 @@ SCREEN2_DATA = {
 }
 
 
+# ========================================
+# ЭКРАН 3 — Результат (диагноз + фиксы)
+# ========================================
+
+# Данные для Экрана 3: диагноз и фиксы по комбинации series + cause
+SCREEN3_DATA = {
+    # low_leads
+    ("low_leads", "unclear_audience"): {
+        "diag": "Вы говорите «в воздух» — аудитория не узнаёт себя",
+        "fix1": "Опишите 1 конкретного человека, которому вы помогли (или хотите помочь)",
+        "fix2": "Перепишите шапку/био с позиции «для кого я»"
+    },
+    ("low_leads", "blurry_offer"): {
+        "diag": "Оффер размытый — непонятно, что человек получит",
+        "fix1": "Сформулируйте результат в 1 предложении: «После работы со мной вы…»",
+        "fix2": "Уберите абстракции («рост», «развитие») — добавьте конкретику"
+    },
+    ("low_leads", "no_system"): {
+        "diag": "Канал есть, но нет системы привлечения",
+        "fix1": "Выберите 1 канал трафика и делайте 1 действие в день",
+        "fix2": "Настройте простую воронку: пост → призыв → личка"
+    },
+
+    # leads_no_buy
+    ("leads_no_buy", "no_followup_script"): {
+        "diag": "Нет скрипта дожима — лиды остывают",
+        "fix1": "Напишите 3 follow-up сообщения для тех, кто замолчал",
+        "fix2": "Отправьте сегодня 5 людям, которые не ответили"
+    },
+    ("leads_no_buy", "no_proof"): {
+        "diag": "Не хватает социального доказательства",
+        "fix1": "Соберите 3 отзыва/кейса (даже из бесплатной работы)",
+        "fix2": "Добавьте 1 кейс в закреп или highlights"
+    },
+    ("leads_no_buy", "too_many_options"): {
+        "diag": "Слишком много вариантов — клиент теряется",
+        "fix1": "Оставьте 1-2 продукта, остальные уберите из виду",
+        "fix2": "Сделайте чёткую рекомендацию: «Вам подойдёт вот это»"
+    },
+
+    # price_ghost
+    ("price_ghost", "long_explain"): {
+        "diag": "Объясняете слишком долго — человек теряет интерес",
+        "fix1": "Сократите объяснение до 3 предложений максимум",
+        "fix2": "Задайте вопрос в конце, чтобы вернуть диалог"
+    },
+    ("price_ghost", "short_miss"): {
+        "diag": "Объясняете коротко, но мимо потребности",
+        "fix1": "Сначала спросите: «Что для вас сейчас важнее всего?»",
+        "fix2": "Свяжите ваш продукт с их ответом"
+    },
+    ("price_ghost", "price_first"): {
+        "diag": "Цена без ценности — человек сравнивает только цифры",
+        "fix1": "Перед ценой дайте 2-3 пункта «что входит»",
+        "fix2": "Добавьте: «Это окупится, потому что…»"
+    },
+
+    # many_chats
+    ("many_chats", "repeat_questions"): {
+        "diag": "Одни и те же вопросы — нет FAQ или автоответов",
+        "fix1": "Выпишите топ-5 вопросов и заготовьте ответы",
+        "fix2": "Добавьте FAQ в закреп или бота"
+    },
+    ("many_chats", "vague_requests"): {
+        "diag": "Люди пишут размыто — нет квалификации на входе",
+        "fix1": "Добавьте в первое сообщение: «Чтобы помочь, уточните…»",
+        "fix2": "Сделайте мини-анкету из 3 вопросов"
+    },
+    ("many_chats", "price_loop"): {
+        "diag": "Все спрашивают цену — оффер не продаёт до цены",
+        "fix1": "Перед ценой спросите: «Что хотите получить в итоге?»",
+        "fix2": "Покажите ценность, потом цену: «Вы получите X, Y, Z — стоимость…»"
+    },
+}
+
+
 async def show_screen1(message, state: FSMContext):
     """Показать Экран 1 — выбор ситуации"""
     keyboard = InlineKeyboardMarkup(
@@ -242,6 +318,57 @@ async def show_screen2(message, state: FSMContext):
     await state.set_state(QuizStates.screen2_cause)
 
 
+async def show_screen3(message, state: FSMContext):
+    """Показать Экран 3 — диагноз + фиксы"""
+    data = await state.get_data()
+    series = data.get("series")
+    cause = data.get("cause")
+
+    # Получаем данные диагноза
+    key = (series, cause)
+    if key not in SCREEN3_DATA:
+        # Fallback — общий диагноз
+        diag = "Нужна более детальная диагностика"
+        fix1 = "Запишитесь на разбор с Мариной"
+        fix2 = "Получите персональный план действий"
+    else:
+        screen_data = SCREEN3_DATA[key]
+        diag = screen_data["diag"]
+        fix1 = screen_data["fix1"]
+        fix2 = screen_data["fix2"]
+
+    # Сохраняем в state
+    await state.update_data(diag=diag, fix1=fix1, fix2=fix2, step=3)
+
+    text = (
+        f"<b>Диагноз:</b> {diag}\n\n"
+        f"<b>Фикс на 24 часа:</b>\n"
+        f"1. {fix1}\n"
+        f"2. {fix2}\n\n"
+        "Вот ваш текст запроса. Нажмите кнопку.\n"
+        "Дальше я в «Экспресс-Генератор 24» соберу для вас план + тексты."
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Отправить Марине мой запрос",
+                callback_data="send_to_marina"
+            )]
+        ]
+    )
+
+    await message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+
+    # Строка-страховка
+    await message.answer(
+        "<i>Если отвлечётесь, то вернётесь, и я продолжу с того же места.</i>",
+        parse_mode='HTML'
+    )
+
+    await state.set_state(QuizStates.screen3_result)
+
+
 @router.callback_query(F.data == "rail_continue")
 async def handle_rail_continue(callback: CallbackQuery, state: FSMContext):
     """Продолжить — переход к следующему экрану"""
@@ -253,9 +380,11 @@ async def handle_rail_continue(callback: CallbackQuery, state: FSMContext):
     if step == 1:
         # Переход к Экрану 2
         await show_screen2(callback.message, state)
+    elif step == 2:
+        # Переход к Экрану 3
+        await show_screen3(callback.message, state)
     else:
-        # TODO: переход к Экрану 3
-        await callback.message.answer("Переход к следующему шагу...", parse_mode='HTML')
+        await callback.message.answer("Вы уже на финальном экране.", parse_mode='HTML')
 
 
 @router.callback_query(F.data == "rail_fast")
@@ -274,7 +403,11 @@ async def handle_rail_back(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     step = data.get("step", 1)
 
-    if step == 2:
+    if step == 3:
+        # Возврат к Экрану 2
+        await state.update_data(step=2)
+        await show_screen2(callback.message, state)
+    elif step == 2:
         # Возврат к Экрану 1
         await state.update_data(step=1)
         await show_screen1(callback.message, state)
@@ -298,10 +431,62 @@ async def handle_rail_back(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "rail_skip")
 async def handle_rail_skip(callback: CallbackQuery, state: FSMContext):
-    """Пропустить и получить вывод"""
+    """Пропустить и получить вывод — сразу к Экрану 3"""
     await callback.answer()
-    # TODO: переход к финальному выводу
-    await callback.message.answer("Формирую вывод...", parse_mode='HTML')
+    await show_screen3(callback.message, state)
+
+
+@router.callback_query(F.data == "send_to_marina")
+async def handle_send_to_marina(callback: CallbackQuery, state: FSMContext):
+    """Отправить запрос Марине"""
+    import os
+    await callback.answer()
+
+    data = await state.get_data()
+    series = data.get("series", "не указано")
+    cause = data.get("cause", "не указано")
+    diag = data.get("diag", "не указано")
+    fix1 = data.get("fix1", "")
+    fix2 = data.get("fix2", "")
+
+    # Информация о пользователе
+    user = callback.from_user
+    user_link = f"@{user.username}" if user.username else f"ID: {user.id}"
+    user_name = user.full_name or "Не указано"
+
+    # Формируем заявку для Марины
+    admin_message = (
+        "🔔 <b>НОВЫЙ ЗАПРОС ИЗ КВИЗА!</b>\n\n"
+        f"👤 <b>Пользователь:</b> {user_name}\n"
+        f"📱 <b>Telegram:</b> {user_link}\n\n"
+        f"📊 <b>Ситуация:</b> {series}\n"
+        f"🔍 <b>Причина:</b> {cause}\n\n"
+        f"<b>Диагноз:</b> {diag}\n\n"
+        f"<b>Рекомендованные фиксы:</b>\n"
+        f"1. {fix1}\n"
+        f"2. {fix2}"
+    )
+
+    # Отправляем админу
+    track_step('lead_sent')
+    admin_chat_id = os.getenv('ADMIN_CHAT_ID')
+    if admin_chat_id:
+        try:
+            await callback.bot.send_message(
+                chat_id=int(admin_chat_id),
+                text=admin_message,
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            print(f"Ошибка отправки админу: {e}")
+
+    # Подтверждение пользователю
+    await callback.message.answer(
+        "✅ <b>Запрос отправлен!</b>\n\n"
+        "Марина получила ваш диагноз и скоро свяжется с вами.\n\n"
+        "А пока — попробуйте применить фиксы выше. Это займёт 24 часа, но даст первый результат.",
+        parse_mode='HTML'
+    )
 
 
 @router.callback_query(F.data.startswith("cause_"))
