@@ -130,28 +130,64 @@ async def handle_series_choice(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(F.data == "rail_continue")
-async def handle_rail_continue(callback: CallbackQuery, state: FSMContext):
-    """Продолжить — переход к следующему экрану"""
-    await callback.answer()
-    # TODO: переход к Экрану 2
-    await callback.message.answer("Переход к следующему шагу...", parse_mode='HTML')
+# ========================================
+# ЭКРАН 2 — Почему так происходит
+# ========================================
+
+# Данные для Экрана 2 по каждой серии
+SCREEN2_DATA = {
+    "low_leads": {
+        "text": (
+            "Часто проблема не в количестве постов.\n"
+            "Люди просто не узнают себя в первом касании.\n\n"
+            "<b>Что ближе в вашем случае?</b>"
+        ),
+        "buttons": [
+            ("Неясно, кому я говорю", "cause_unclear_audience"),
+            ("Оффер размытый", "cause_blurry_offer"),
+            ("Канал есть, но нет системы", "cause_no_system"),
+        ]
+    },
+    "leads_no_buy": {
+        "text": (
+            "Лиды могут быть нормальные.\n"
+            "Чаще ломается «мост» от интереса к действию.\n\n"
+            "<b>Где ломается у вас?</b>"
+        ),
+        "buttons": [
+            ("Не дожимаю в переписке", "cause_no_followup_script"),
+            ("Нет доверия/кейсов", "cause_no_proof"),
+            ("Слишком много вариантов — человек теряется", "cause_too_many_options"),
+        ]
+    },
+    "price_ghost": {
+        "text": (
+            "Это почти никогда не про цену.\n"
+            "Обычно человек не понял, что именно получит.\n\n"
+            "<b>У вас чаще как?</b>"
+        ),
+        "buttons": [
+            ("Объясняю долго", "cause_long_explain"),
+            ("Объясняю коротко, но мимо", "cause_short_miss"),
+            ("Сразу кидаю прайс", "cause_price_first"),
+        ]
+    },
+    "many_chats": {
+        "text": (
+            "Заготовки ответов не спасают, если у человека нет ясного запроса.\n\n"
+            "<b>Что выматывает сильнее?</b>"
+        ),
+        "buttons": [
+            ("Одни и те же вопросы", "cause_repeat_questions"),
+            ("Люди пишут размыто", "cause_vague_requests"),
+            ("Всё упирается в «а сколько стоит?»", "cause_price_loop"),
+        ]
+    }
+}
 
 
-@router.callback_query(F.data == "rail_fast")
-async def handle_rail_fast(callback: CallbackQuery, state: FSMContext):
-    """Сделать быстрее — ускоренный путь"""
-    await callback.answer()
-    # TODO: ускоренный путь
-    await callback.message.answer("Ускоренный режим...", parse_mode='HTML')
-
-
-@router.callback_query(F.data == "rail_back")
-async def handle_rail_back(callback: CallbackQuery, state: FSMContext):
-    """Вернуться — возврат к предыдущему экрану"""
-    await callback.answer()
-
-    # Возврат к Экрану 1
+async def show_screen1(message, state: FSMContext):
+    """Показать Экран 1 — выбор ситуации"""
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
@@ -178,7 +214,86 @@ async def handle_rail_back(callback: CallbackQuery, state: FSMContext):
         "<b>Что сейчас болит сильнее всего?</b>"
     )
 
-    await callback.message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+    await message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+    await state.set_state(QuizStates.screen1_situation)
+
+
+async def show_screen2(message, state: FSMContext):
+    """Показать Экран 2 — почему так происходит"""
+    data = await state.get_data()
+    series = data.get("series")
+
+    if not series or series not in SCREEN2_DATA:
+        # Fallback к Экрану 1
+        await show_screen1(message, state)
+        return
+
+    screen_data = SCREEN2_DATA[series]
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=btn_text, callback_data=btn_data)]
+            for btn_text, btn_data in screen_data["buttons"]
+        ]
+    )
+
+    await message.answer(screen_data["text"], reply_markup=keyboard, parse_mode='HTML')
+    await state.update_data(step=2)
+    await state.set_state(QuizStates.screen2_cause)
+
+
+@router.callback_query(F.data == "rail_continue")
+async def handle_rail_continue(callback: CallbackQuery, state: FSMContext):
+    """Продолжить — переход к следующему экрану"""
+    await callback.answer()
+
+    data = await state.get_data()
+    step = data.get("step", 1)
+
+    if step == 1:
+        # Переход к Экрану 2
+        await show_screen2(callback.message, state)
+    else:
+        # TODO: переход к Экрану 3
+        await callback.message.answer("Переход к следующему шагу...", parse_mode='HTML')
+
+
+@router.callback_query(F.data == "rail_fast")
+async def handle_rail_fast(callback: CallbackQuery, state: FSMContext):
+    """Сделать быстрее — ускоренный путь"""
+    await callback.answer()
+    # TODO: ускоренный путь
+    await callback.message.answer("Ускоренный режим...", parse_mode='HTML')
+
+
+@router.callback_query(F.data == "rail_back")
+async def handle_rail_back(callback: CallbackQuery, state: FSMContext):
+    """Вернуться — возврат к предыдущему экрану"""
+    await callback.answer()
+
+    data = await state.get_data()
+    step = data.get("step", 1)
+
+    if step == 2:
+        # Возврат к Экрану 1
+        await state.update_data(step=1)
+        await show_screen1(callback.message, state)
+    elif step == 1:
+        # Возврат к Экрану 0
+        await state.update_data(step=0)
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Начать", callback_data="screen0_start")]
+            ]
+        )
+        text = (
+            "Быстрый разбор за 60 секунд.\n\n"
+            "3 шага → диагноз → готовый текст Марине.\n\n"
+            "Поехали?"
+        )
+        await callback.message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+    else:
+        await show_screen1(callback.message, state)
 
 
 @router.callback_query(F.data == "rail_skip")
@@ -187,6 +302,36 @@ async def handle_rail_skip(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     # TODO: переход к финальному выводу
     await callback.message.answer("Формирую вывод...", parse_mode='HTML')
+
+
+@router.callback_query(F.data.startswith("cause_"))
+async def handle_cause_choice(callback: CallbackQuery, state: FSMContext):
+    """Обработчик выбора причины на Экране 2"""
+    await callback.answer()
+
+    # Извлекаем cause из callback_data (убираем префикс "cause_")
+    cause = callback.data.replace("cause_", "")
+    await state.update_data(cause=cause)
+
+    # Поручни (навигация)
+    rails_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Продолжить", callback_data="rail_continue"),
+                InlineKeyboardButton(text="Сделать быстрее", callback_data="rail_fast")
+            ],
+            [
+                InlineKeyboardButton(text="Вернуться", callback_data="rail_back"),
+                InlineKeyboardButton(text="Пропустить и получить вывод", callback_data="rail_skip")
+            ]
+        ]
+    )
+
+    await callback.message.answer(
+        "Выберите действие:",
+        reply_markup=rails_keyboard,
+        parse_mode='HTML'
+    )
 
 
 @router.callback_query(F.data == "start_quiz")
