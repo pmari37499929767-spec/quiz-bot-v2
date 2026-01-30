@@ -13,6 +13,11 @@ class QuizStates(StatesGroup):
     # Экран 3 — результат (диагноз + фиксы)
     screen3_result = State()
 
+    # Сбор данных для автотекста
+    waiting_for_goal = State()
+    waiting_for_channel = State()
+    confirm_autotext = State()
+
     waiting_for_name = State()
     waiting_for_niche = State()  # ← ДОБАВИЛИ для выбора ниши
     

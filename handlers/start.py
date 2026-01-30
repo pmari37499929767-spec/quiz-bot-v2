@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -29,11 +30,35 @@ async def cmd_stats(message: Message):
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
-    """Обработчик команды /start — Экран 0 (заставка)"""
+    """Обработчик команды /start — Экран 0 (заставка) или возврат"""
     track_step('start')
 
-    # Сохраняем step = 0
-    await state.update_data(step=0)
+    # Проверяем, есть ли незавершённый прогресс
+    data = await state.get_data()
+    step = data.get("step", 0)
+
+    # Anti-UX-дырка: если пользователь вернулся на шаге 1 или 2
+    if step in (1, 2):
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="Продолжить с места",
+                    callback_data="resume_progress"
+                )],
+                [InlineKeyboardButton(
+                    text="Пропустить и получить вывод",
+                    callback_data="rail_skip"
+                )]
+            ]
+        )
+
+        text = f"Мы остановились на шаге <b>{step}</b> из 3. Продолжим?"
+
+        await message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+        return
+
+    # Новый пользователь или начало заново — Экран 0
+    await state.update_data(step=0, updated_at=datetime.now().isoformat())
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -59,8 +84,8 @@ async def screen0_start(callback: CallbackQuery, state: FSMContext):
     track_step('quiz_started')
     await callback.answer()
 
-    # Обновляем step = 1
-    await state.update_data(step=1)
+    # Обновляем step = 1 и updated_at
+    await state.update_data(step=1, updated_at=datetime.now().isoformat())
 
     # Экран 1 — Ситуация (выбор "что болит")
     keyboard = InlineKeyboardMarkup(
@@ -93,6 +118,28 @@ async def screen0_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(QuizStates.screen1_situation)
 
 
+@router.callback_query(F.data == "resume_progress")
+async def handle_resume_progress(callback: CallbackQuery, state: FSMContext):
+    """Продолжить с места — возврат к текущему экрану"""
+    await callback.answer()
+
+    data = await state.get_data()
+    step = data.get("step", 1)
+
+    # Обновляем updated_at
+    await state.update_data(updated_at=datetime.now().isoformat())
+
+    if step == 1:
+        # Показать Экран 1
+        await show_screen1(callback.message, state)
+    elif step == 2:
+        # Показать Экран 2
+        await show_screen2(callback.message, state)
+    else:
+        # Fallback к Экрану 1
+        await show_screen1(callback.message, state)
+
+
 @router.callback_query(F.data.startswith("series_"))
 async def handle_series_choice(callback: CallbackQuery, state: FSMContext):
     """Обработчик выбора ситуации на Экране 1"""
@@ -107,7 +154,7 @@ async def handle_series_choice(callback: CallbackQuery, state: FSMContext):
     }
 
     series = series_map.get(callback.data)
-    await state.update_data(series=series)
+    await state.update_data(series=series, updated_at=datetime.now().isoformat())
 
     # Поручни (навигация)
     rails_keyboard = InlineKeyboardMarkup(
@@ -194,71 +241,98 @@ SCREEN2_DATA = {
 SCREEN3_DATA = {
     # low_leads
     ("low_leads", "unclear_audience"): {
-        "diag": "Вы говорите «в воздух» — аудитория не узнаёт себя",
-        "fix1": "Опишите 1 конкретного человека, которому вы помогли (или хотите помочь)",
-        "fix2": "Перепишите шапку/био с позиции «для кого я»"
+        "diag": "Сообщения «для всех» не попадают ни в кого → человек не узнаёт себя и не входит в диалог",
+        "fix1": "Выбрать 1 человека (кто он и что у него болит) и переписать 3 первые фразы под него",
+        "fix2": "Добавить одну фразу-узнавание в первое касание («если у вас сейчас…»)"
     },
     ("low_leads", "blurry_offer"): {
-        "diag": "Оффер размытый — непонятно, что человек получит",
-        "fix1": "Сформулируйте результат в 1 предложении: «После работы со мной вы…»",
-        "fix2": "Уберите абстракции («рост», «развитие») — добавьте конкретику"
+        "diag": "Человек не понимает «что именно будет на выходе» — поэтому не делает шаг",
+        "fix1": "Оффер 1 строкой: кому → результат → срок/формат",
+        "fix2": "Один следующий шаг: «получить план/пример/созвон» (не «узнать цену»)"
     },
     ("low_leads", "no_system"): {
-        "diag": "Канал есть, но нет системы привлечения",
-        "fix1": "Выберите 1 канал трафика и делайте 1 действие в день",
-        "fix2": "Настройте простую воронку: пост → призыв → личка"
+        "diag": "Нет маршрута: вход → квалификация → следующий шаг, поэтому трафик не превращается в заявки",
+        "fix1": "Зафиксировать 1 вход (пост/реклама/бот) и 1 следующий шаг (кнопка/сообщение)",
+        "fix2": "Сделать мини-сценарий из 3 сообщений, который повторяется"
     },
 
     # leads_no_buy
     ("leads_no_buy", "no_followup_script"): {
-        "diag": "Нет скрипта дожима — лиды остывают",
-        "fix1": "Напишите 3 follow-up сообщения для тех, кто замолчал",
-        "fix2": "Отправьте сегодня 5 людям, которые не ответили"
+        "diag": "Нет сценария 3 сообщений → диалог превращается в болото",
+        "fix1": "Сообщение 1: уточнить цель (1 вопрос)",
+        "fix2": "Сообщение 2: один кейс + CTA «выбирайте A/B»"
     },
     ("leads_no_buy", "no_proof"): {
-        "diag": "Не хватает социального доказательства",
-        "fix1": "Соберите 3 отзыва/кейса (даже из бесплатной работы)",
-        "fix2": "Добавьте 1 кейс в закреп или highlights"
+        "diag": "Человек не рискует: нет доказательства, что вы доводите до результата",
+        "fix1": "1 кейс «было/стало» в цифре или факте",
+        "fix2": "Микро-гарантия: «первый шаг за 24 часа»"
     },
     ("leads_no_buy", "too_many_options"): {
-        "diag": "Слишком много вариантов — клиент теряется",
-        "fix1": "Оставьте 1-2 продукта, остальные уберите из виду",
-        "fix2": "Сделайте чёткую рекомендацию: «Вам подойдёт вот это»"
+        "diag": "Избыток выбора вызывает зависание → человек не решает и исчезает",
+        "fix1": "Оставить 1 основной формат на 14 дней (один вход)",
+        "fix2": "Перевести выбор в A/B (две опции вместо пяти)"
     },
 
     # price_ghost
     ("price_ghost", "long_explain"): {
-        "diag": "Объясняете слишком долго — человек теряет интерес",
-        "fix1": "Сократите объяснение до 3 предложений максимум",
-        "fix2": "Задайте вопрос в конце, чтобы вернуть диалог"
+        "diag": "Пока человек читает — он остывает",
+        "fix1": "Укоротить до 3 строк: боль → результат → шаг",
+        "fix2": "Убрать «как/почему», оставить «что получит»"
     },
     ("price_ghost", "short_miss"): {
-        "diag": "Объясняете коротко, но мимо потребности",
-        "fix1": "Сначала спросите: «Что для вас сейчас важнее всего?»",
-        "fix2": "Свяжите ваш продукт с их ответом"
+        "diag": "Слишком коротко = без контекста → человек не понимает, что это про него",
+        "fix1": "Добавить 1 строку «кому/в какой ситуации» перед результатом",
+        "fix2": "Добавить 1 факт-доказательство (кейс/цифра/пример)"
     },
     ("price_ghost", "price_first"): {
-        "diag": "Цена без ценности — человек сравнивает только цифры",
-        "fix1": "Перед ценой дайте 2-3 пункта «что входит»",
-        "fix2": "Добавьте: «Это окупится, потому что…»"
+        "diag": "Цена без контекста = повод исчезнуть",
+        "fix1": "Перед ценой: 1 фраза результата",
+        "fix2": "После цены: «что дальше» (слот/мини-шаг)"
     },
 
     # many_chats
     ("many_chats", "repeat_questions"): {
-        "diag": "Одни и те же вопросы — нет FAQ или автоответов",
-        "fix1": "Выпишите топ-5 вопросов и заготовьте ответы",
-        "fix2": "Добавьте FAQ в закреп или бота"
+        "diag": "Вы вручную повторяете квалификацию — это съедает время и сливает ресурс",
+        "fix1": "Свернуть повторяющиеся вопросы в 3 кнопки-ситуации",
+        "fix2": "На каждую кнопку — один короткий ответ + следующий шаг"
     },
     ("many_chats", "vague_requests"): {
-        "diag": "Люди пишут размыто — нет квалификации на входе",
-        "fix1": "Добавьте в первое сообщение: «Чтобы помочь, уточните…»",
-        "fix2": "Сделайте мини-анкету из 3 вопросов"
+        "diag": "У человека нет рамки → он не может сформулировать запрос",
+        "fix1": "Дать 3 кнопки-ситуации («я про X/Y/Z»)",
+        "fix2": "Сформировать готовое сообщение в личку"
     },
     ("many_chats", "price_loop"): {
-        "diag": "Все спрашивают цену — оффер не продаёт до цены",
-        "fix1": "Перед ценой спросите: «Что хотите получить в итоге?»",
-        "fix2": "Покажите ценность, потом цену: «Вы получите X, Y, Z — стоимость…»"
+        "diag": "Цена стала единственным ориентиром, потому что не зафиксирован результат и следующий шаг",
+        "fix1": "До цены — 1 строка результата + кому подходит",
+        "fix2": "После цены — следующий шаг (слот/мини-формат/выбор A/B)"
     },
+}
+
+
+# ========================================
+# Человекочитаемые названия для автотекста
+# ========================================
+
+SERIES_TEXT = {
+    "low_leads": "Лидов мало — тишина",
+    "leads_no_buy": "Лиды есть, но не покупают",
+    "price_ghost": "«Прайс?» → и пропал",
+    "many_chats": "Много переписки — мало результата"
+}
+
+CAUSE_TEXT = {
+    "unclear_audience": "Неясно, кому я говорю",
+    "blurry_offer": "Оффер размытый",
+    "no_system": "Канал есть, но нет системы",
+    "no_followup_script": "Не дожимаю в переписке",
+    "no_proof": "Нет доверия/кейсов",
+    "too_many_options": "Слишком много вариантов — человек теряется",
+    "long_explain": "Объясняю долго",
+    "short_miss": "Объясняю коротко — мимо",
+    "price_first": "Сразу кидаю прайс",
+    "repeat_questions": "Одни и те же вопросы",
+    "vague_requests": "Люди пишут размыто",
+    "price_loop": "Всё упирается в «а сколько стоит?»"
 }
 
 
@@ -438,33 +512,187 @@ async def handle_rail_skip(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "send_to_marina")
 async def handle_send_to_marina(callback: CallbackQuery, state: FSMContext):
-    """Отправить запрос Марине"""
+    """Начать сбор данных для автотекста — шаг 1: выбор цели"""
+    await callback.answer()
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="3 оплаты", callback_data="goal_3_sales")],
+            [InlineKeyboardButton(text="10 заявок", callback_data="goal_10_leads")],
+            [InlineKeyboardButton(text="Убрать «прайс — пропал»", callback_data="goal_fix_price_ghost")],
+            [InlineKeyboardButton(text="Собрать сценарий переписки", callback_data="goal_script")]
+        ]
+    )
+
+    await callback.message.answer(
+        "<b>Цель на 14 дней:</b>",
+        reply_markup=keyboard,
+        parse_mode='HTML'
+    )
+
+    await state.set_state(QuizStates.waiting_for_goal)
+
+
+@router.callback_query(F.data.startswith("goal_"))
+async def handle_goal_choice(callback: CallbackQuery, state: FSMContext):
+    """Получить цель и показать выбор канала"""
+    await callback.answer()
+
+    # Маппинг callback_data → текст цели
+    goal_map = {
+        "goal_3_sales": "3 оплаты",
+        "goal_10_leads": "10 заявок",
+        "goal_fix_price_ghost": "Убрать «прайс — пропал»",
+        "goal_script": "Собрать сценарий переписки"
+    }
+
+    goal = goal_map.get(callback.data, callback.data)
+    await state.update_data(goal=goal)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="ТГ", callback_data="channel_tg"),
+                InlineKeyboardButton(text="ВК", callback_data="channel_vk")
+            ],
+            [
+                InlineKeyboardButton(text="Реклама", callback_data="channel_ads"),
+                InlineKeyboardButton(text="Другое", callback_data="channel_other")
+            ]
+        ]
+    )
+
+    await callback.message.answer(
+        "<b>Канал/трафик:</b>",
+        reply_markup=keyboard,
+        parse_mode='HTML'
+    )
+
+    await state.set_state(QuizStates.waiting_for_channel)
+
+
+@router.callback_query(F.data.startswith("channel_"))
+async def handle_channel_choice(callback: CallbackQuery, state: FSMContext):
+    """Получить канал и показать автотекст"""
+    await callback.answer()
+
+    # Маппинг callback_data → текст канала
+    channel_map = {
+        "channel_tg": "ТГ",
+        "channel_vk": "ВК",
+        "channel_ads": "Реклама",
+        "channel_other": "Другое"
+    }
+
+    channel = channel_map.get(callback.data, callback.data)
+    await state.update_data(channel=channel)
+
+    # Формируем автотекст
+    data = await state.get_data()
+    series = data.get("series", "")
+    cause = data.get("cause", "")
+    diag = data.get("diag", "не указано")
+    goal = data.get("goal", "")
+
+    series_text = SERIES_TEXT.get(series, series)
+    cause_text = CAUSE_TEXT.get(cause, cause)
+
+    autotext = (
+        f"Марина, прошёл(ла) быстрый разбор.\n\n"
+        f"<b>Ситуация:</b> {series_text}\n"
+        f"<b>Причина:</b> {cause_text}\n"
+        f"<b>Диагноз:</b> {diag}\n\n"
+        f"<b>Цель на 14 дней:</b> {goal}\n"
+        f"<b>Канал/трафик:</b> {channel}\n\n"
+        f"Хочу: план + 3 текста в «Экспресс-Генератор 24»."
+    )
+
+    # Сохраняем автотекст
+    await state.update_data(autotext=autotext)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Отправить",
+                callback_data="confirm_send_to_marina"
+            )],
+            [InlineKeyboardButton(
+                text="Изменить",
+                callback_data="edit_autotext"
+            )]
+        ]
+    )
+
+    await message.answer(
+        f"<b>Ваш запрос:</b>\n\n{autotext}",
+        reply_markup=keyboard,
+        parse_mode='HTML'
+    )
+
+    await state.set_state(QuizStates.confirm_autotext)
+
+
+@router.callback_query(F.data == "edit_autotext")
+async def handle_edit_autotext(callback: CallbackQuery, state: FSMContext):
+    """Вернуться к выбору цели"""
+    await callback.answer()
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="3 оплаты", callback_data="goal_3_sales")],
+            [InlineKeyboardButton(text="10 заявок", callback_data="goal_10_leads")],
+            [InlineKeyboardButton(text="Убрать «прайс — пропал»", callback_data="goal_fix_price_ghost")],
+            [InlineKeyboardButton(text="Собрать сценарий переписки", callback_data="goal_script")]
+        ]
+    )
+
+    await callback.message.answer(
+        "<b>Цель на 14 дней:</b>",
+        reply_markup=keyboard,
+        parse_mode='HTML'
+    )
+
+    await state.set_state(QuizStates.waiting_for_goal)
+
+
+@router.callback_query(F.data == "confirm_send_to_marina")
+async def handle_confirm_send(callback: CallbackQuery, state: FSMContext):
+    """Подтвердить и отправить запрос Марине"""
     import os
     await callback.answer()
 
     data = await state.get_data()
-    series = data.get("series", "не указано")
-    cause = data.get("cause", "не указано")
-    diag = data.get("diag", "не указано")
+    autotext = data.get("autotext", "")
+    series = data.get("series", "")
+    cause = data.get("cause", "")
+    diag = data.get("diag", "")
+    goal = data.get("goal", "")
+    channel = data.get("channel", "")
     fix1 = data.get("fix1", "")
     fix2 = data.get("fix2", "")
+
+    series_text = SERIES_TEXT.get(series, series)
+    cause_text = CAUSE_TEXT.get(cause, cause)
 
     # Информация о пользователе
     user = callback.from_user
     user_link = f"@{user.username}" if user.username else f"ID: {user.id}"
     user_name = user.full_name or "Не указано"
 
-    # Формируем заявку для Марины
+    # Формируем заявку для Марины (расширенная версия для админа)
     admin_message = (
         "🔔 <b>НОВЫЙ ЗАПРОС ИЗ КВИЗА!</b>\n\n"
         f"👤 <b>Пользователь:</b> {user_name}\n"
         f"📱 <b>Telegram:</b> {user_link}\n\n"
-        f"📊 <b>Ситуация:</b> {series}\n"
-        f"🔍 <b>Причина:</b> {cause}\n\n"
-        f"<b>Диагноз:</b> {diag}\n\n"
+        f"📊 <b>Ситуация:</b> {series_text}\n"
+        f"🔍 <b>Причина:</b> {cause_text}\n"
+        f"🎯 <b>Диагноз:</b> {diag}\n\n"
+        f"📌 <b>Цель на 14 дней:</b> {goal}\n"
+        f"📡 <b>Канал/трафик:</b> {channel}\n\n"
         f"<b>Рекомендованные фиксы:</b>\n"
         f"1. {fix1}\n"
-        f"2. {fix2}"
+        f"2. {fix2}\n\n"
+        f"💬 <b>Запрос:</b> план + 3 текста в «Экспресс-Генератор 24»"
     )
 
     # Отправляем админу
@@ -484,7 +712,7 @@ async def handle_send_to_marina(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "✅ <b>Запрос отправлен!</b>\n\n"
         "Марина получила ваш диагноз и скоро свяжется с вами.\n\n"
-        "А пока — попробуйте применить фиксы выше. Это займёт 24 часа, но даст первый результат.",
+        "А пока — попробуйте применить фиксы. Это займёт 24 часа, но даст первый результат.",
         parse_mode='HTML'
     )
 
@@ -496,7 +724,7 @@ async def handle_cause_choice(callback: CallbackQuery, state: FSMContext):
 
     # Извлекаем cause из callback_data (убираем префикс "cause_")
     cause = callback.data.replace("cause_", "")
-    await state.update_data(cause=cause)
+    await state.update_data(cause=cause, updated_at=datetime.now().isoformat())
 
     # Поручни (навигация)
     rails_keyboard = InlineKeyboardMarkup(
