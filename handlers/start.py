@@ -55,20 +55,138 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "screen0_start")
 async def screen0_start(callback: CallbackQuery, state: FSMContext):
-    """Обработчик кнопки 'Начать' с Экрана 0 — переход к квизу"""
+    """Обработчик кнопки 'Начать' с Экрана 0 — переход к Экрану 1"""
     track_step('quiz_started')
     await callback.answer()
 
-    # Обновляем step
+    # Обновляем step = 1
     await state.update_data(step=1)
 
-    text = (
-        "Отлично! Прежде чем начнём, представься:\n\n"
-        "<b>Как тебя зовут?</b>"
+    # Экран 1 — Ситуация (выбор "что болит")
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Лидов мало — тишина",
+                callback_data="series_low_leads"
+            )],
+            [InlineKeyboardButton(
+                text="Лиды есть, но не покупают",
+                callback_data="series_leads_no_buy"
+            )],
+            [InlineKeyboardButton(
+                text="«Прайс?» → и пропал",
+                callback_data="series_price_ghost"
+            )],
+            [InlineKeyboardButton(
+                text="Много переписки — мало результата",
+                callback_data="series_many_chats"
+            )]
+        ]
     )
 
-    await callback.message.answer(text, parse_mode='HTML')
-    await state.set_state(QuizStates.waiting_for_name)
+    text = (
+        "Вы запускаете контент/трафик, а в личке всё по кругу.\n\n"
+        "<b>Что сейчас болит сильнее всего?</b>"
+    )
+
+    await callback.message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+    await state.set_state(QuizStates.screen1_situation)
+
+
+@router.callback_query(F.data.startswith("series_"))
+async def handle_series_choice(callback: CallbackQuery, state: FSMContext):
+    """Обработчик выбора ситуации на Экране 1"""
+    await callback.answer()
+
+    # Маппинг callback_data → series
+    series_map = {
+        "series_low_leads": "low_leads",
+        "series_leads_no_buy": "leads_no_buy",
+        "series_price_ghost": "price_ghost",
+        "series_many_chats": "many_chats"
+    }
+
+    series = series_map.get(callback.data)
+    await state.update_data(series=series)
+
+    # Поручни (навигация)
+    rails_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Продолжить", callback_data="rail_continue"),
+                InlineKeyboardButton(text="Сделать быстрее", callback_data="rail_fast")
+            ],
+            [
+                InlineKeyboardButton(text="Вернуться", callback_data="rail_back"),
+                InlineKeyboardButton(text="Пропустить и получить вывод", callback_data="rail_skip")
+            ]
+        ]
+    )
+
+    await callback.message.answer(
+        "Выберите действие:",
+        reply_markup=rails_keyboard,
+        parse_mode='HTML'
+    )
+
+
+@router.callback_query(F.data == "rail_continue")
+async def handle_rail_continue(callback: CallbackQuery, state: FSMContext):
+    """Продолжить — переход к следующему экрану"""
+    await callback.answer()
+    # TODO: переход к Экрану 2
+    await callback.message.answer("Переход к следующему шагу...", parse_mode='HTML')
+
+
+@router.callback_query(F.data == "rail_fast")
+async def handle_rail_fast(callback: CallbackQuery, state: FSMContext):
+    """Сделать быстрее — ускоренный путь"""
+    await callback.answer()
+    # TODO: ускоренный путь
+    await callback.message.answer("Ускоренный режим...", parse_mode='HTML')
+
+
+@router.callback_query(F.data == "rail_back")
+async def handle_rail_back(callback: CallbackQuery, state: FSMContext):
+    """Вернуться — возврат к предыдущему экрану"""
+    await callback.answer()
+
+    # Возврат к Экрану 1
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Лидов мало — тишина",
+                callback_data="series_low_leads"
+            )],
+            [InlineKeyboardButton(
+                text="Лиды есть, но не покупают",
+                callback_data="series_leads_no_buy"
+            )],
+            [InlineKeyboardButton(
+                text="«Прайс?» → и пропал",
+                callback_data="series_price_ghost"
+            )],
+            [InlineKeyboardButton(
+                text="Много переписки — мало результата",
+                callback_data="series_many_chats"
+            )]
+        ]
+    )
+
+    text = (
+        "Вы запускаете контент/трафик, а в личке всё по кругу.\n\n"
+        "<b>Что сейчас болит сильнее всего?</b>"
+    )
+
+    await callback.message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+
+
+@router.callback_query(F.data == "rail_skip")
+async def handle_rail_skip(callback: CallbackQuery, state: FSMContext):
+    """Пропустить и получить вывод"""
+    await callback.answer()
+    # TODO: переход к финальному выводу
+    await callback.message.answer("Формирую вывод...", parse_mode='HTML')
 
 
 @router.callback_query(F.data == "start_quiz")

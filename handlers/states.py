@@ -3,7 +3,10 @@ from aiogram.fsm.state import State, StatesGroup
 
 class QuizStates(StatesGroup):
     """Состояния для прохождения квиза"""
-    
+
+    # Экран 1 — выбор ситуации
+    screen1_situation = State()
+
     waiting_for_name = State()
     waiting_for_niche = State()  # ← ДОБАВИЛИ для выбора ниши
     
