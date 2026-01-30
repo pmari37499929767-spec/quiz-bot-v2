@@ -28,45 +28,60 @@ async def cmd_stats(message: Message):
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
-    """Обработчик команды /start"""
+async def cmd_start(message: Message, state: FSMContext):
+    """Обработчик команды /start — Экран 0 (заставка)"""
     track_step('start')
+
+    # Сохраняем step = 0
+    await state.update_data(step=0)
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text="✅ Да, хочу расследование",
-                callback_data="start_quiz"
-            )],
-            [InlineKeyboardButton(
-                text="❌ Нет, потом как-нибудь",
-                callback_data="decline_quiz"
+                text="Начать",
+                callback_data="screen0_start"
             )]
         ]
     )
-    
+
     text = (
-        "👋 Привет, друг!\n\n"
-        "<b>Твой личный детектив по итогам года готов к расследованию!</b>\n\n"
-        "Если 2025 по доходу/результатам тебя не радует, давай устроим маленькое расследование: "
-        "кто съедает твой рост и почему ты до сих пор не там, где мог(ла) быть.\n\n"
-        "За 2–3 минуты ты увидишь своё узкое место и поймёшь, что с этим делать в 2026. Поехали?"
+        "Быстрый разбор за 60 секунд.\n\n"
+        "3 шага → диагноз → готовый текст Марине.\n\n"
+        "Поехали?"
     )
-    
+
     await message.answer(text, reply_markup=keyboard, parse_mode='HTML')
+
+
+@router.callback_query(F.data == "screen0_start")
+async def screen0_start(callback: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Начать' с Экрана 0 — переход к квизу"""
+    track_step('quiz_started')
+    await callback.answer()
+
+    # Обновляем step
+    await state.update_data(step=1)
+
+    text = (
+        "Отлично! Прежде чем начнём, представься:\n\n"
+        "<b>Как тебя зовут?</b>"
+    )
+
+    await callback.message.answer(text, parse_mode='HTML')
+    await state.set_state(QuizStates.waiting_for_name)
 
 
 @router.callback_query(F.data == "start_quiz")
 async def start_quiz(callback: CallbackQuery, state: FSMContext):
-    """Обработчик нажатия на кнопку 'Да'"""
+    """Обработчик нажатия на кнопку 'Да' (legacy)"""
     track_step('quiz_started')
     await callback.answer()
-    
+
     text = (
         "Отлично! Прежде чем начнём расследование, представьтесь:\n\n"
         "<b>Как вас зовут?</b>"
     )
-    
+
     await callback.message.answer(text, parse_mode='HTML')
     await state.set_state(QuizStates.waiting_for_name)
 
