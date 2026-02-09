@@ -619,12 +619,16 @@ async def handle_channel_choice(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(
                 text="Изменить",
                 callback_data="edit_autotext"
+            )],
+            [InlineKeyboardButton(
+                text="Открыть чат с Мариной",
+                url="https://t.me/promt_sos"
             )]
         ]
     )
 
     await message.answer(
-        f"<b>Ваш запрос:</b>\n\n{autotext}",
+        f"<b>Ваш запрос:</b>\n\n<code>{autotext}</code>",
         reply_markup=keyboard,
         parse_mode='HTML'
     )

@@ -1,0 +1,18 @@
+{
+  "total_starts": 1,
+  "steps": {
+    "start": 1,
+    "quiz_started": 1,
+    "q1_niche": 0,
+    "q2_point_a": 0,
+    "q3_goal": 0,
+    "q4_perceived": 0,
+    "q5_traffic": 0,
+    "q6_content": 0,
+    "q7_sales": 0,
+    "q8_system": 0,
+    "results": 0,
+    "lead_sent": 0
+  },
+  "last_reset": "2026-02-09T15:24:40.066150"
+}

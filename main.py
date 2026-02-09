@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram_fsm_sqlitestorage import SQLiteStorage
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 import os
@@ -36,7 +36,7 @@ async def main():
     )
     
     # Создаём диспетчер (обработчик сообщений)
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=SQLiteStorage("bot_storage.db"))
     
     # Подключаем обработчики из handlers/start.py
     dp.include_router(start.router)
